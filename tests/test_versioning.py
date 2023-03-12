@@ -3,6 +3,7 @@
 # This file is part of Invenio.
 # Copyright (C) 2015-2018 CERN.
 # Copyright (C) 2022 RERO.
+# Copyright (C) 2023 Graz University of Technology.
 #
 # Invenio is free software; you can redistribute it and/or modify it
 # under the terms of the MIT License; see LICENSE file for more details.
@@ -12,6 +13,7 @@
 from unittest.mock import patch
 
 import pytest
+from demo.versioned_b import UnversionedArticle, VersionedArticle
 from mocks import _mock_entry_points
 from sqlalchemy_continuum import VersioningManager, remove_versioning
 
@@ -77,8 +79,6 @@ def test_versioning(db, app):
         assert 4 == len(db.metadata.tables)
 
         db.create_all()
-
-        from demo.versioned_b import UnversionedArticle, VersionedArticle
 
         original_name = "original_name"
 
