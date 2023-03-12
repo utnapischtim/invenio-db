@@ -16,6 +16,13 @@ from mocks import _mock_entry_points
 from sqlalchemy_continuum import VersioningManager, remove_versioning
 
 from invenio_db import InvenioDB
+from invenio_db.shared import db as _db
+
+
+class EarlyClass(_db.Model):
+    __versioned__ = {}
+
+    pk = _db.Column(_db.Integer, primary_key=True)
 
 
 @patch("importlib_metadata.entry_points", _mock_entry_points("invenio_db.models_a"))
@@ -31,11 +38,6 @@ def test_disabled_versioning(db, app):
 def test_disabled_versioning_with_custom_table(db, app, versioning, tables):
     """Test SQLAlchemy-Continuum table loading."""
     app.config["DB_VERSIONING"] = versioning
-
-    class EarlyClass(db.Model):
-        __versioned__ = {}
-
-        pk = db.Column(db.Integer, primary_key=True)
 
     idb = InvenioDB(
         app, entry_point_group=None, db=db, versioning_manager=VersioningManager()
