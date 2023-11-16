@@ -24,11 +24,7 @@ def abort_if_false(ctx, param, value):
 
 def render_url(url):
     """Render the URL for CLI output."""
-    try:
-        return url.render_as_string(hide_password=True)
-    except AttributeError:
-        # SQLAlchemy <1.4
-        return url.__to_string__(hide_password=True)
+    return url.render_as_string(hide_password=True)
 
 
 #
@@ -82,7 +78,8 @@ def init():
     """Create database."""
     displayed_database = render_url(current_sqlalchemy.engine.url)
     click.secho(f"Creating database {displayed_database}", fg="green")
-    database_url = str(current_sqlalchemy.engine.url)
+    database_url = current_sqlalchemy.engine.url.render_as_string(hide_password=False)
+
     if not database_exists(database_url):
         create_database(database_url)
 
@@ -100,10 +97,12 @@ def destroy():
     """Drop database."""
     displayed_database = render_url(current_sqlalchemy.engine.url)
     click.secho(f"Destroying database {displayed_database}", fg="red", bold=True)
+
+    plain_url = current_sqlalchemy.engine.url.render_as_string(hide_password=False)
     if current_sqlalchemy.engine.name == "sqlite":
         try:
-            drop_database(current_sqlalchemy.engine.url)
+            drop_database(plain_url)
         except FileNotFoundError:
             click.secho("Sqlite database has not been initialised", fg="red", bold=True)
     else:
-        drop_database(current_sqlalchemy.engine.url)
+        drop_database(plain_url)
