@@ -41,6 +41,18 @@ def _mock_entry_points(name):
                     name="demo.versioned_b", value="demo.versioned_b", group="test"
                 ),
             ],
+            "invenio_db.models_c": [
+                MockEntryPoint(
+                    name="demo.unversioned_article",
+                    value="demo.unversioned_article",
+                    group="test",
+                ),
+                MockEntryPoint(
+                    name="demo.versioned_article",
+                    value="demo.versioned_article",
+                    group="test",
+                ),
+            ],
         }
         if group:
             return data.get(group, [])
