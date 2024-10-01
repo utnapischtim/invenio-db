@@ -3,7 +3,7 @@
 # This file is part of Invenio.
 # Copyright (C) 2015-2018 CERN.
 # Copyright (C) 2022 RERO.
-# Copyright (C) 2023 Graz University of Technology.
+# Copyright (C) 2023-2024 Graz University of Technology.
 #
 # Invenio is free software; you can redistribute it and/or modify it
 # under the terms of the MIT License; see LICENSE file for more details.
@@ -17,13 +17,6 @@ from mocks import _mock_entry_points
 from sqlalchemy_continuum import VersioningManager, remove_versioning
 
 from invenio_db import InvenioDB
-from invenio_db.shared import db as _db
-
-
-class EarlyClass(_db.Model):
-    __versioned__ = {}
-
-    pk = _db.Column(_db.Integer, primary_key=True)
 
 
 @patch("importlib_metadata.entry_points", _mock_entry_points("invenio_db.models_a"))
@@ -35,11 +28,17 @@ def test_disabled_versioning(db, app):
         assert 2 == len(db.metadata.tables)
 
 
-@pytest.mark.skip(reason="it seems that is not more possible")
 @pytest.mark.parametrize("versioning,tables", [(False, 1), (True, 3)])
 def test_disabled_versioning_with_custom_table(db, app, versioning, tables):
     """Test SQLAlchemy-Continuum table loading."""
     app.config["DB_VERSIONING"] = versioning
+
+    # this class has to be defined here, because the the db has to be the db
+    # from the fixture. using it "from invenio_db import db" is not working
+    class EarlyClass(db.Model):
+        __versioned__ = {}
+
+        pk = db.Column(db.Integer, primary_key=True)
 
     idb = InvenioDB(
         app, entry_point_group=None, db=db, versioning_manager=VersioningManager()
@@ -65,7 +64,7 @@ def test_disabled_versioning_with_custom_table(db, app, versioning, tables):
 @patch("importlib_metadata.entry_points", _mock_entry_points("invenio_db.models_b"))
 def test_versioning(db, app):
     """Test SQLAlchemy-Continuum enabled versioning."""
-    # it is essential that it is imported HERE, otherwise it fails
+    # they have to imported inside of the tests, otherwise it doesn't work
     from demo.versioned_b import UnversionedArticle, VersionedArticle
 
     app.config["DB_VERSIONING"] = True
