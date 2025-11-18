@@ -3,7 +3,7 @@
 # This file is part of Invenio.
 # Copyright (C) 2015-2018 CERN.
 # Copyright (C) 2022 RERO.
-# Copyright (C) 2022 Graz University of Technology.
+# Copyright (C) 2022-2025 Graz University of Technology.
 #
 # Invenio is free software; you can redistribute it and/or modify it
 # under the terms of the MIT License; see LICENSE file for more details.
@@ -18,11 +18,96 @@ from importlib.resources import files
 import sqlalchemy as sa
 from flask_alembic import Alembic
 from invenio_base.utils import entry_points
+from sqlalchemy_continuum import make_versioned
+from sqlalchemy_continuum import versioning_manager as default_vm
+from sqlalchemy_continuum.manager import VersioningManager
+from sqlalchemy_continuum.plugins import FlaskPlugin
+from sqlalchemy_continuum.unit_of_work import UnitOfWork as ContinuumUnitOfWork
 from sqlalchemy_utils.functions import get_class_by_table
 
 from .cli import db as db_cmd
 from .shared import db
 from .utils import versioning_models_registered
+
+
+class MyContinuumUnitOfWork(ContinuumUnitOfWork):
+    def process_before_flush(self, session):
+        """
+        Before flush processor for given session.
+
+        This method creates a version session which is later on used for the
+        creation of version objects. It also creates Transaction object for the
+        current transaction and invokes before_flush template method on all
+        plugins.
+
+        If the given session had no relevant modifications regarding versioned
+        objects this method does nothing.
+
+        :param session: SQLAlchemy session object
+        """
+        if session == self.version_session:
+            return
+
+        if not self.is_modified(session):
+            return
+
+        if not self.version_session:
+            self.version_session = sa.orm.session.Session(
+                bind=session.connection(), join_transaction_mode="control_fully"
+            )
+
+        if not self.current_transaction:
+            self.create_transaction(session)
+
+        self.manager.plugins.before_flush(self, session)
+
+    def process_after_flush(self, session):
+        """
+        After flush processor for given session.
+
+        Creates version objects for all modified versioned parent objects that
+        were affected during the flush phase.
+
+        :param session: SQLAlchemy session object
+        """
+        if session == self.version_session:
+            return
+
+        if not self.current_transaction:
+            return
+
+        if not self.version_session:
+            self.version_session = sa.orm.session.Session(
+                bind=session.connection(), join_transaction_mode="control_fully"
+            )
+
+        self.make_versions(session)
+
+    def create_transaction(self, session):
+        """
+        Create transaction object for given SQLAlchemy session.
+
+        :param session: SQLAlchemy session object
+        """
+        args = self.transaction_args(session)
+
+        Transaction = self.manager.transaction_cls
+        self.current_transaction = Transaction()
+
+        for key, value in args.items():
+            setattr(self.current_transaction, key, value)
+        if not self.version_session:
+            self.version_session = sa.orm.session.Session(
+                bind=session.connection(), join_transaction_mode="control_fully"
+            )
+        self.version_session.add(self.current_transaction)
+        self.version_session.flush()
+        self.version_session.expunge(self.current_transaction)
+        session.add(self.current_transaction)
+        return self.current_transaction
+
+
+my_versioning_manager = VersioningManager(unit_of_work_cls=MyContinuumUnitOfWork)
 
 
 class InvenioDB(object):
@@ -93,6 +178,7 @@ class InvenioDB(object):
         sa.orm.configure_mappers()
         # Ensure that versioning classes have been built.
         if app.config["DB_VERSIONING"]:
+
             manager = self.versioning_manager
             if manager.pending_classes:
                 if not versioning_models_registered(manager, database.Model):
@@ -122,11 +208,6 @@ class InvenioDB(object):
                 "pip install invenio-db[versioning]."
             )
 
-        # Now we can import SQLAlchemy-Continuum.
-        from sqlalchemy_continuum import make_versioned
-        from sqlalchemy_continuum import versioning_manager as default_vm
-        from sqlalchemy_continuum.plugins import FlaskPlugin
-
         # Try to guess user model class:
         if "DB_VERSIONING_USER_MODEL" not in app.config:  # pragma: no cover
             try:
@@ -141,7 +222,8 @@ class InvenioDB(object):
         plugins = [FlaskPlugin()] if user_cls else []
 
         # Call make_versioned() before your models are defined.
-        self.versioning_manager = versioning_manager or default_vm
+        self.versioning_manager = my_versioning_manager
+
         make_versioned(
             user_cls=user_cls,
             manager=self.versioning_manager,
